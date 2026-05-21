@@ -1,18 +1,34 @@
 import SwiftUI
 import SwiftData
+import SafariServices
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
     @Query private var incomeProfiles: [IncomeProfile]
-    @Query private var expenses: [Expense]
     @Query private var mortgages: [Mortgage]
     @Query private var loans: [PersonalLoan]
+    @Query private var transactions: [Transaction]
+
+    @AppStorage("appearancePreference") private var appearancePreference: String = "system"
+    @AppStorage("showFiftyThirtyTwenty") private var showFiftyThirtyTwenty: Bool = false
 
     @State private var showingIncomeSetup = false
     @State private var showingResetConfirm = false
+    @State private var presentedLink: WebLink? = nil
 
-    private var income: IncomeProfile? { incomeProfiles.first }
+    // Update this if your live website is hosted at a different URL.
+    private let websiteBaseURL = "https://neikkie.github.io/Financelytic"
+
+    private var webLinks: [WebLink] {
+        [
+            WebLink(id: "home",    title: "Home",              icon: "house.fill",           path: ""),
+            WebLink(id: "usage",   title: "How to Use",        icon: "book.fill",            path: "/usage"),
+            WebLink(id: "privacy", title: "Privacy Policy",    icon: "hand.raised.fill",     path: "/privacy"),
+            WebLink(id: "terms",   title: "Terms & Conditions", icon: "doc.text.fill",       path: "/terms")
+        ]
+    }
+
+    private var totalMonthlyIncome: Double { incomeProfiles.reduce(0) { $0 + $1.monthlyAmount } }
 
     var body: some View {
         NavigationStack {
@@ -31,18 +47,47 @@ struct SettingsView: View {
                     .glassCard()
                     .accentGlow(color: .appTeal, radius: 16)
 
+                    // Appearance
+                    sectionCard("Appearance") {
+                        HStack(spacing: 0) {
+                            ForEach(["system", "light", "dark"], id: \.self) { mode in
+                                Button {
+                                    appearancePreference = mode
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: mode == "system" ? "circle.lefthalf.filled" : mode == "light" ? "sun.max.fill" : "moon.fill")
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundStyle(appearancePreference == mode ? Color.appGreen : Color.primary)
+                                        Text(mode.capitalized)
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(appearancePreference == mode ? Color.appGreen : Color.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(appearancePreference == mode ? Color.appGreen.opacity(0.12) : Color.clear)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .strokeBorder(appearancePreference == mode ? Color.appGreen.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     // Income
                     sectionCard("Income") {
                         Button { showingIncomeSetup = true } label: {
                             HStack(spacing: 14) {
                                 iconCell("dollarsign.circle.fill", gradient: .accent)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Net Income").foregroundStyle(.primary)
-                                    if let income {
-                                        Text("\(income.amount.currencyFormatted) \(income.frequency.perPeriodLabel) · \(income.monthlyAmount.currencyFormatted)/mo")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    } else {
+                                    Text("Income Sources").foregroundStyle(.primary)
+                                    if incomeProfiles.isEmpty {
                                         Text("Not set").font(.caption).foregroundStyle(Color.appGold)
+                                    } else {
+                                        Text("\(incomeProfiles.count) source\(incomeProfiles.count == 1 ? "" : "s") · \(totalMonthlyIncome.currencyFormatted)/mo")
+                                            .font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
                                 Spacer()
@@ -51,12 +96,62 @@ struct SettingsView: View {
                         }
                     }
 
+                    // Budget preferences
+                    sectionCard("Budget") {
+                        Toggle(isOn: $showFiftyThirtyTwenty) {
+                            HStack(spacing: 14) {
+                                iconCell("chart.pie.fill", gradient: .accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("50 / 30 / 20 Breakdown").foregroundStyle(.primary)
+                                    Text("Show the framework card on the Budget tab")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .tint(.appGreen)
+                    }
+
+                    // Long-term debt management
+                    sectionCard("Mortgages & Loans") {
+                        VStack(spacing: 12) {
+                            NavigationLink {
+                                MortgageView()
+                            } label: {
+                                HStack(spacing: 14) {
+                                    iconCell("building.2.fill",
+                                             gradient: LinearGradient(colors: [.indigo, .blue],
+                                                                      startPoint: .leading, endPoint: .trailing))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Mortgages").foregroundStyle(.primary)
+                                        Text("\(mortgages.count) tracked").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                }
+                            }
+                            divider()
+                            NavigationLink {
+                                PersonalLoansView()
+                            } label: {
+                                HStack(spacing: 14) {
+                                    iconCell("person.2.fill", gradient: .warning)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Personal Loans").foregroundStyle(.primary)
+                                        Text("\(loans.count) tracked").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    }
+
                     // Data summary
                     sectionCard("Your Data") {
                         VStack(spacing: 12) {
-                            dataRow("Expenses Tracked", "\(expenses.count)", "list.bullet.rectangle.fill", .accent)
+                            dataRow("Transactions", "\(transactions.count)", "list.bullet.rectangle.fill", .accent)
                             divider()
-                            dataRow("Paid Expenses", "\(expenses.filter { $0.isPaid }.count)", "checkmark.circle.fill",
+                            dataRow("Income Sources", "\(incomeProfiles.count)", "dollarsign.circle.fill",
                                     LinearGradient(colors: [.appGreen, .appGreen], startPoint: .leading, endPoint: .trailing))
                             divider()
                             dataRow("Mortgages", "\(mortgages.count)", "building.2.fill",
@@ -74,6 +169,26 @@ struct SettingsView: View {
                             featureRow("SwiftData", "Private on-device storage", "lock.shield.fill", .appGreen)
                             divider()
                             featureRow("Privacy First", "Your data never leaves your device", "hand.raised.fill", .appTeal)
+                        }
+                    }
+
+                    // Resources (in-app web views)
+                    sectionCard("Resources") {
+                        VStack(spacing: 12) {
+                            ForEach(Array(webLinks.enumerated()), id: \.element.id) { idx, link in
+                                Button {
+                                    presentedLink = link
+                                } label: {
+                                    HStack(spacing: 14) {
+                                        iconCell(link.icon, gradient: .accent)
+                                        Text(link.title).foregroundStyle(.primary)
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right.square")
+                                            .font(.caption).foregroundStyle(.tertiary)
+                                    }
+                                }
+                                if idx < webLinks.count - 1 { divider() }
+                            }
                         }
                     }
 
@@ -104,7 +219,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Text("Deleting all data removes income, expenses, mortgage, and loan records permanently.")
+                    Text("Deleting all data removes income, transactions, mortgage, and loan records permanently.")
                         .font(.caption2).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
@@ -117,15 +232,13 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .premiumNavBar()
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(LinearGradient.accent)
-                }
-            }
             .sheet(isPresented: $showingIncomeSetup) {
-                IncomeSetupView().preferredColorScheme(.dark)
+                IncomeSetupView()
+            }
+            .sheet(item: $presentedLink) { link in
+                if let url = URL(string: websiteBaseURL + link.path) {
+                    SafariView(url: url).ignoresSafeArea()
+                }
             }
             .confirmationDialog("Reset All Data", isPresented: $showingResetConfirm, titleVisibility: .visible) {
                 Button("Delete Everything", role: .destructive) { resetAllData() }
@@ -134,7 +247,6 @@ struct SettingsView: View {
                 Text("This permanently deletes all financial records and cannot be undone.")
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Helpers
@@ -186,7 +298,7 @@ struct SettingsView: View {
     }
 
     private func divider() -> some View {
-        Divider().background(.white.opacity(0.07))
+        Divider()
     }
 
     private var appVersion: String {
@@ -194,9 +306,38 @@ struct SettingsView: View {
     }
 
     private func resetAllData() {
-        expenses.forEach   { modelContext.delete($0) }
-        mortgages.forEach  { modelContext.delete($0) }
-        loans.forEach      { modelContext.delete($0) }
-        incomeProfiles.forEach { modelContext.delete($0) }
+        do {
+            try modelContext.delete(model: Transaction.self)
+            try modelContext.delete(model: Mortgage.self)
+            try modelContext.delete(model: PersonalLoan.self)
+            try modelContext.delete(model: IncomeProfile.self)
+            try modelContext.save()
+        } catch {
+            // batch delete failed — nothing further we can do here
+        }
     }
+}
+
+// MARK: - Web Link helpers
+
+struct WebLink: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let icon: String
+    let path: String
+}
+
+/// Presents a webpage inside the app using SFSafariViewController.
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let config = SFSafariViewController.Configuration()
+        config.entersReaderIfAvailable = false
+        let controller = SFSafariViewController(url: url, configuration: config)
+        controller.preferredControlTintColor = UIColor(Color.appGreen)
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

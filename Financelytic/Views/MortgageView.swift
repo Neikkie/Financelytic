@@ -17,12 +17,8 @@ struct MortgageView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center).padding(.horizontal)
                         Button("Add Mortgage") { showingAdd = true }
-                            .font(.headline)
-                            .padding(.horizontal, 28).padding(.vertical, 12)
-                            .background(LinearGradient.accent)
-                            .foregroundStyle(.black)
-                            .clipShape(Capsule())
-                            .accentGlow()
+                            .buttonStyle(.glassProminent)
+                            .tint(.appGreen)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .premiumBackground()
@@ -47,16 +43,13 @@ struct MortgageView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingAdd = true } label: {
-                        ZStack {
-                            Circle().fill(.ultraThinMaterial).frame(width: 34, height: 34)
-                            Image(systemName: "plus")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(LinearGradient.accent)
-                        }
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
                     }
+                    .buttonStyle(.glass)
                 }
             }
-            .sheet(isPresented: $showingAdd) { AddMortgageView().preferredColorScheme(.dark) }
+            .sheet(isPresented: $showingAdd) { AddMortgageView() }
         }
     }
 }
@@ -109,9 +102,9 @@ struct MortgageDetailView: View {
                 VStack(spacing: 16) {
                     HStack {
                         statBlock("Original", mortgage.originalBalance.currencyFormatted)
-                        Divider().frame(height: 44).background(.white.opacity(0.1))
+                        Divider().frame(height: 44)
                         statBlock("Paid Off", (mortgage.originalBalance - mortgage.currentBalance).currencyFormatted)
-                        Divider().frame(height: 44).background(.white.opacity(0.1))
+                        Divider().frame(height: 44)
                         statBlock("Remaining", mortgage.currentBalance.currencyFormatted, highlight: true)
                     }
                     AccentProgressBar(value: mortgage.payoffProgress, height: 10)
@@ -185,7 +178,7 @@ struct MortgageDetailView: View {
                                 }
                             }
                             if payment.date != mortgage.payments.sorted { $0.date > $1.date }.last?.date {
-                                Divider().background(.white.opacity(0.06))
+                                Divider()
                             }
                         }
                     }
@@ -209,7 +202,7 @@ struct MortgageDetailView: View {
             }
         }
         .sheet(isPresented: $showingAddPayment) {
-            AddMortgagePaymentView(mortgage: mortgage).preferredColorScheme(.dark)
+            AddMortgagePaymentView(mortgage: mortgage)
         }
     }
 
@@ -233,7 +226,7 @@ struct MortgageDetailView: View {
     }
 
     private func sep() -> some View {
-        Divider().background(.white.opacity(0.07))
+        Divider()
     }
 }
 
@@ -252,68 +245,215 @@ struct AddMortgageView: View {
     @State private var startDate = Date()
     @State private var termYears = 30
 
+    private let termOptions = [10, 15, 20, 25, 30]
+
+    private var origAmount: Double {
+        Double(originalBalance.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+    private var paymentAmount: Double {
+        Double(monthlyPayment.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+    private var rateValue: Double { Double(interestRate) ?? 0 }
     private var isValid: Bool {
-        !lenderName.isEmpty && Double(originalBalance) != nil &&
-        Double(interestRate) != nil && Double(monthlyPayment) != nil
+        !lenderName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        origAmount > 0 && paymentAmount > 0
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Lender Info") {
-                    TextField("Lender Name (e.g. Chase Bank)", text: $lenderName)
-                    TextField("Property Address (optional)", text: $propertyAddress)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    heroPreview
+                    lenderCard
+                    amountCard
+                    paymentCard
+                    termCard
+                    if isValid { summaryCard }
+                    Spacer().frame(height: 16)
                 }
-                Section("Loan Amounts") {
-                    currencyField("Original Loan Amount", text: $originalBalance)
-                    currencyField("Current Balance (blank = same)", text: $currentBalance)
-                }
-                Section("Payment Details") {
-                    HStack {
-                        TextField("Interest Rate", text: $interestRate).keyboardType(.decimalPad)
-                        Text("%").foregroundStyle(.secondary)
-                    }
-                    currencyField("Monthly Payment", text: $monthlyPayment)
-                }
-                Section("Term") {
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-                    Stepper("Term: \(termYears) years", value: $termYears, in: 1...40)
-                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.appBg)
-            .navigationTitle("Add Mortgage")
+            .premiumBackground()
+            .navigationTitle("New Mortgage")
             .navigationBarTitleDisplayMode(.inline)
             .premiumNavBar()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(.secondary)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { save() }.fontWeight(.semibold)
-                        .foregroundStyle(isValid ? AnyShapeStyle(LinearGradient.accent) : AnyShapeStyle(Color.secondary))
+                    Button("Add") { save() }
+                        .fontWeight(.semibold).tint(.appGreen)
                         .disabled(!isValid)
                 }
             }
         }
     }
 
-    private func currencyField(_ placeholder: String, text: Binding<String>) -> some View {
-        HStack {
-            Text("$").foregroundStyle(.secondary)
-            TextField(placeholder, text: text).keyboardType(.decimalPad)
+    // MARK: - Sections
+
+    private var heroPreview: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [.indigo.opacity(0.25), .blue.opacity(0.15)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "building.2.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(LinearGradient(colors: [.indigo, .blue],
+                                                    startPoint: .top, endPoint: .bottom))
+            }
+            Text(lenderName.isEmpty ? "Add Mortgage" : lenderName)
+                .font(.headline)
+                .foregroundStyle(lenderName.isEmpty ? .secondary : .primary)
+            if paymentAmount > 0 {
+                Text("\(paymentAmount.currencyFormatted)/mo · \(termYears)-yr term")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var lenderCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Lender").font(.caption).foregroundStyle(.secondary)
+            TextField("Lender (e.g. Chase Bank)", text: $lenderName)
+                .font(.subheadline)
+            Divider()
+            TextField("Property address (optional)", text: $propertyAddress)
+                .font(.subheadline)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var amountCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Loan Amount").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("$")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(LinearGradient.accent)
+                TextField("0", text: $originalBalance)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .keyboardType(.decimalPad)
+            }
+            Text("Original loan amount").font(.caption2).foregroundStyle(.tertiary)
+            Divider().padding(.top, 4)
+            HStack {
+                Text("$").foregroundStyle(.secondary)
+                TextField("Current balance", text: $currentBalance)
+                    .font(.subheadline)
+                    .keyboardType(.decimalPad)
+            }
+            Text("Leave blank if it's the same as the original").font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var paymentCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Payment").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("$").foregroundStyle(.secondary)
+                TextField("Monthly payment", text: $monthlyPayment)
+                    .font(.subheadline)
+                    .keyboardType(.decimalPad)
+            }
+            Divider()
+            HStack {
+                TextField("Interest rate", text: $interestRate)
+                    .font(.subheadline)
+                    .keyboardType(.decimalPad)
+                Text("%").foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var termCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Term").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                ForEach(termOptions, id: \.self) { years in
+                    let selected = termYears == years
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.12)) { termYears = years }
+                    } label: {
+                        Text("\(years)y")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(selected ? Color.appGreen.opacity(0.18) : Color.primary.opacity(0.05),
+                                        in: RoundedRectangle(cornerRadius: 9))
+                            .foregroundStyle(selected ? Color.appGreen : Color.primary)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9)
+                                    .strokeBorder(selected ? Color.appGreen.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Divider()
+            DatePicker("Start date", selection: $startDate, displayedComponents: .date)
+                .font(.subheadline)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var summaryCard: some View {
+        let totalMonths = termYears * 12
+        let totalCost = paymentAmount * Double(totalMonths)
+        let interestCost = max(totalCost - origAmount, 0)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Summary").font(.caption.weight(.semibold)).foregroundStyle(Color.appGreen)
+            HStack {
+                summaryStat("Total of payments", totalCost.currencyFormatted)
+                Divider().frame(height: 32)
+                summaryStat("Est. interest", interestCost.currencyFormatted)
+            }
+        }
+        .padding(16)
+        .background(Color.appGreen.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.appGreen.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private func summaryStat(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.subheadline.weight(.bold))
+                .foregroundStyle(.primary)
+                .minimumScaleFactor(0.7).lineLimit(1)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func save() {
-        let orig = Double(originalBalance) ?? 0
-        let curr = currentBalance.isEmpty ? orig : (Double(currentBalance) ?? orig)
+        let curr = currentBalance.isEmpty ? origAmount :
+            (Double(currentBalance.replacingOccurrences(of: ",", with: "")) ?? origAmount)
         let mortgage = Mortgage(
-            lenderName: lenderName, propertyAddress: propertyAddress,
-            originalBalance: orig, currentBalance: curr,
-            interestRate: Double(interestRate) ?? 0,
-            monthlyPayment: Double(monthlyPayment) ?? 0,
-            startDate: startDate, termYears: termYears
+            lenderName: lenderName.trimmingCharacters(in: .whitespaces),
+            propertyAddress: propertyAddress,
+            originalBalance: origAmount,
+            currentBalance: curr,
+            interestRate: rateValue,
+            monthlyPayment: paymentAmount,
+            startDate: startDate,
+            termYears: termYears
         )
         modelContext.insert(mortgage)
+        try? modelContext.save()
         dismiss()
     }
 }
@@ -323,6 +463,7 @@ struct AddMortgageView: View {
 struct AddMortgagePaymentView: View {
     @Bindable var mortgage: Mortgage
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     @State private var date = Date()
     @State private var principalText = ""
@@ -362,7 +503,7 @@ struct AddMortgagePaymentView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.appBg)
+            .background(Color(UIColor.systemGroupedBackground))
             .navigationTitle("Log Payment")
             .navigationBarTitleDisplayMode(.inline)
             .premiumNavBar()
@@ -370,7 +511,7 @@ struct AddMortgagePaymentView: View {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { save() }.fontWeight(.semibold)
-                        .foregroundStyle(principal > 0 ? AnyShapeStyle(LinearGradient.accent) : AnyShapeStyle(Color.secondary))
+                        .tint(.appGreen)
                         .disabled(principal <= 0)
                 }
             }
@@ -382,6 +523,7 @@ struct AddMortgagePaymentView: View {
                                       principalAmount: principal, interestAmount: interest, note: note)
         mortgage.payments.append(payment)
         mortgage.currentBalance = max(mortgage.currentBalance - principal, 0)
+        try? modelContext.save()
         dismiss()
     }
 }

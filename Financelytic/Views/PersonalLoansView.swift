@@ -7,7 +7,7 @@ struct PersonalLoansView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showingAdd = false
 
-    private var monthlyIncome: Double { incomeProfiles.first?.monthlyAmount ?? 0 }
+    private var monthlyIncome: Double { incomeProfiles.reduce(0) { $0 + $1.monthlyAmount } }
     private var activeLoans: [PersonalLoan] { loans.filter { !$0.isPaidOff } }
     private var paidLoans: [PersonalLoan]  { loans.filter { $0.isPaidOff  } }
     private var totalOwed: Double { activeLoans.reduce(0) { $0 + $1.currentBalance } }
@@ -24,12 +24,8 @@ struct PersonalLoansView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center).padding(.horizontal)
                         Button("Add Loan") { showingAdd = true }
-                            .font(.headline)
-                            .padding(.horizontal, 28).padding(.vertical, 12)
-                            .background(LinearGradient.accent)
-                            .foregroundStyle(.black)
-                            .clipShape(Capsule())
-                            .accentGlow()
+                            .buttonStyle(.glassProminent)
+                            .tint(.appGreen)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .premiumBackground()
@@ -71,16 +67,13 @@ struct PersonalLoansView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingAdd = true } label: {
-                        ZStack {
-                            Circle().fill(.ultraThinMaterial).frame(width: 34, height: 34)
-                            Image(systemName: "plus")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(LinearGradient.accent)
-                        }
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
                     }
+                    .buttonStyle(.glass)
                 }
             }
-            .sheet(isPresented: $showingAdd) { AddLoanView().preferredColorScheme(.dark) }
+            .sheet(isPresented: $showingAdd) { AddLoanView() }
         }
     }
 
@@ -92,6 +85,7 @@ struct PersonalLoansView: View {
                     Text(totalOwed.currencyFormatted)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(LinearGradient.warning)
+                        .minimumScaleFactor(0.6).lineLimit(1)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
@@ -99,6 +93,7 @@ struct PersonalLoansView: View {
                     Text(totalMonthlyCommitment.currencyFormatted)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(LinearGradient.danger)
+                        .minimumScaleFactor(0.6).lineLimit(1)
                 }
             }
             if monthlyIncome > 0 {
@@ -122,7 +117,7 @@ struct PersonalLoansView: View {
             Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             Text("\(count)").font(.caption).foregroundStyle(.secondary)
                 .padding(.horizontal, 7).padding(.vertical, 2)
-                .background(.white.opacity(0.08)).clipShape(Capsule())
+                .background(Color.primary.opacity(0.07)).clipShape(Capsule())
             Spacer()
         }
     }
@@ -185,9 +180,9 @@ struct LoanDetailView: View {
                 VStack(spacing: 16) {
                     HStack {
                         statBlock("Borrowed", loan.originalAmount.currencyFormatted)
-                        Divider().frame(height: 44).background(.white.opacity(0.1))
+                        Divider().frame(height: 44)
                         statBlock("Paid", loan.totalPaid.currencyFormatted, highlight: true)
-                        Divider().frame(height: 44).background(.white.opacity(0.1))
+                        Divider().frame(height: 44)
                         statBlock("Remaining", max(loan.currentBalance,0).currencyFormatted)
                     }
                     AccentProgressBar(value: loan.payoffProgress,
@@ -255,7 +250,7 @@ struct LoanDetailView: View {
                                     .font(.subheadline.weight(.semibold)).foregroundStyle(Color.appGreen)
                             }
                             if payment.id != sortedPayments.last?.id {
-                                Divider().background(.white.opacity(0.06))
+                                Divider()
                             }
                         }
                     }
@@ -280,7 +275,7 @@ struct LoanDetailView: View {
             }
         }
         .sheet(isPresented: $showingAddPayment) {
-            AddLoanPaymentView(loan: loan).preferredColorScheme(.dark)
+            AddLoanPaymentView(loan: loan)
         }
     }
 
@@ -303,7 +298,7 @@ struct LoanDetailView: View {
         .padding(.vertical, 2)
     }
 
-    private func sep() -> some View { Divider().background(.white.opacity(0.07)) }
+    private func sep() -> some View { Divider() }
 }
 
 // MARK: - Add Loan
@@ -321,67 +316,205 @@ struct AddLoanView: View {
     @State private var frequency: PaymentFrequency = .monthly
     @State private var notes = ""
 
-    private let relationships = ["Friend", "Family", "Colleague", "Other"]
-    private var isValid: Bool { !lenderName.isEmpty && Double(amount) != nil }
+    private struct RelOption {
+        let label: String
+        let icon: String
+    }
+    private let relationships: [RelOption] = [
+        .init(label: "Friend",    icon: "person.fill"),
+        .init(label: "Family",    icon: "person.3.fill"),
+        .init(label: "Colleague", icon: "briefcase.fill"),
+        .init(label: "Other",     icon: "ellipsis.circle.fill")
+    ]
+
+    private var amountValue: Double {
+        Double(amount.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+    private var paymentValue: Double {
+        Double(agreedPayment.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+    private var isValid: Bool {
+        !lenderName.trimmingCharacters(in: .whitespaces).isEmpty && amountValue > 0
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Lender") {
-                    TextField("Name", text: $lenderName)
-                    Picker("Relationship", selection: $relationship) {
-                        ForEach(relationships, id: \.self) { Text($0) }
-                    }
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    heroPreview
+                    lenderCard
+                    amountCard
+                    repaymentCard
+                    notesCard
+                    Spacer().frame(height: 16)
                 }
-                Section("Amount Borrowed") {
-                    HStack {
-                        Text("$").foregroundStyle(.secondary)
-                        TextField("0.00", text: $amount).keyboardType(.decimalPad)
-                    }
-                }
-                Section("Repayment Plan") {
-                    HStack {
-                        Text("$").foregroundStyle(.secondary)
-                        TextField("Agreed payment amount", text: $agreedPayment).keyboardType(.decimalPad)
-                    }
-                    Picker("Frequency", selection: $frequency) {
-                        ForEach(PaymentFrequency.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    Toggle("Has Due Date", isOn: $hasDueDate)
-                    if hasDueDate {
-                        DatePicker("Due Date", selection: $dueDate, displayedComponents: .date)
-                    }
-                }
-                Section("Notes (optional)") {
-                    TextField("Agreement details, conditions...", text: $notes, axis: .vertical)
-                        .lineLimit(3...6)
-                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.appBg)
-            .navigationTitle("Add Personal Loan")
+            .premiumBackground()
+            .navigationTitle("New Loan")
             .navigationBarTitleDisplayMode(.inline)
             .premiumNavBar()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(.secondary)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { save() }.fontWeight(.semibold)
-                        .foregroundStyle(isValid ? AnyShapeStyle(LinearGradient.accent) : AnyShapeStyle(Color.secondary))
+                    Button("Add") { save() }
+                        .fontWeight(.semibold).tint(.appGreen)
                         .disabled(!isValid)
                 }
             }
         }
     }
 
+    // MARK: - Sections
+
+    private var heroPreview: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [.orange.opacity(0.28), .appGold.opacity(0.18)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(LinearGradient.warning)
+            }
+            Text(lenderName.isEmpty ? "Add Loan" : lenderName)
+                .font(.headline)
+                .foregroundStyle(lenderName.isEmpty ? .secondary : .primary)
+            if amountValue > 0 {
+                Text("\(amountValue.currencyFormatted) · \(relationship)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var lenderCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Who Did You Borrow From?")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("Name", text: $lenderName)
+                .font(.subheadline)
+            Divider()
+            Text("Relationship").font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                ForEach(relationships, id: \.label) { opt in
+                    let selected = relationship == opt.label
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.12)) { relationship = opt.label }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: opt.icon)
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(opt.label)
+                                .font(.caption2.weight(.medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(selected ? Color.appGreen.opacity(0.18) : Color.primary.opacity(0.05),
+                                    in: RoundedRectangle(cornerRadius: 9))
+                        .foregroundStyle(selected ? Color.appGreen : Color.primary)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .strokeBorder(selected ? Color.appGreen.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var amountCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Amount Borrowed").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("$")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(LinearGradient.warning)
+                TextField("0", text: $amount)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .keyboardType(.decimalPad)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var repaymentCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Repayment Plan").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("$").foregroundStyle(.secondary)
+                TextField("Agreed payment", text: $agreedPayment)
+                    .font(.subheadline)
+                    .keyboardType(.decimalPad)
+            }
+            Divider()
+            Text("Frequency").font(.caption2).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(PaymentFrequency.allCases, id: \.self) { freq in
+                        let selected = frequency == freq
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.12)) { frequency = freq }
+                        } label: {
+                            Text(freq.rawValue)
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(selected ? Color.appGreen.opacity(0.18) : Color.primary.opacity(0.05),
+                                            in: Capsule())
+                                .foregroundStyle(selected ? Color.appGreen : Color.primary)
+                                .overlay(Capsule().strokeBorder(selected ? Color.appGreen.opacity(0.5) : Color.clear, lineWidth: 1.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Divider()
+            Toggle(isOn: $hasDueDate.animation()) {
+                Text("Has a due date").font(.subheadline)
+            }
+            .tint(.appGreen)
+            if hasDueDate {
+                DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
+                    .font(.subheadline)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var notesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Notes (optional)").font(.caption).foregroundStyle(.secondary)
+            TextField("Agreement details, conditions...", text: $notes, axis: .vertical)
+                .font(.subheadline)
+                .lineLimit(2...4)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private func save() {
         let loan = PersonalLoan(
-            lenderName: lenderName, relationship: relationship,
-            originalAmount: Double(amount) ?? 0,
+            lenderName: lenderName.trimmingCharacters(in: .whitespaces),
+            relationship: relationship,
+            originalAmount: amountValue,
             dueDate: hasDueDate ? dueDate : nil,
-            agreedPaymentAmount: Double(agreedPayment) ?? 0,
-            paymentFrequency: frequency, notes: notes
+            agreedPaymentAmount: paymentValue,
+            paymentFrequency: frequency,
+            notes: notes
         )
         modelContext.insert(loan)
+        try? modelContext.save()
         dismiss()
     }
 }
@@ -391,6 +524,7 @@ struct AddLoanView: View {
 struct AddLoanPaymentView: View {
     @Bindable var loan: PersonalLoan
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     @State private var date = Date()
     @State private var amountText = ""
@@ -413,7 +547,7 @@ struct AddLoanPaymentView: View {
                         Button("Use agreed amount (\(loan.agreedPaymentAmount.currencyFormatted))") {
                             amountText = String(format: "%.2f", loan.agreedPaymentAmount)
                         }
-                        .font(.subheadline).foregroundStyle(LinearGradient.accent)
+                        .font(.subheadline).tint(.appGreen)
                     }
                 }
                 Section("Note (optional)") {
@@ -432,7 +566,7 @@ struct AddLoanPaymentView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.appBg)
+            .background(Color(UIColor.systemGroupedBackground))
             .navigationTitle("Log Payment")
             .navigationBarTitleDisplayMode(.inline)
             .premiumNavBar()
@@ -440,7 +574,7 @@ struct AddLoanPaymentView: View {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { save() }.fontWeight(.semibold)
-                        .foregroundStyle(amount > 0 ? AnyShapeStyle(LinearGradient.accent) : AnyShapeStyle(Color.secondary))
+                        .tint(.appGreen)
                         .disabled(amount <= 0)
                 }
             }
@@ -450,6 +584,7 @@ struct AddLoanPaymentView: View {
     private func save() {
         loan.payments.append(LoanPayment(date: date, amount: amount, note: note))
         loan.currentBalance = max(loan.currentBalance - amount, 0)
+        try? modelContext.save()
         dismiss()
     }
 }

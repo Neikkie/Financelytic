@@ -32,7 +32,7 @@ struct FinancelyticApp: App {
             MortgagePayment.self,
             PersonalLoan.self,
             LoanPayment.self,
-            Expense.self
+            Transaction.self
         ])
     }
 }

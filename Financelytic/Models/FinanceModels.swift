@@ -26,6 +26,7 @@ enum IncomeFrequency: String, Codable, CaseIterable {
 }
 
 enum PaymentFrequency: String, Codable, CaseIterable {
+    case daily      = "Daily"
     case weekly     = "Weekly"
     case biweekly   = "Bi-Weekly"
     case monthly    = "Monthly"
@@ -34,11 +35,56 @@ enum PaymentFrequency: String, Codable, CaseIterable {
 
     var monthlyMultiplier: Double {
         switch self {
+        case .daily:     return 30.0
         case .weekly:    return 52.0 / 12.0
         case .biweekly:  return 26.0 / 12.0
         case .monthly:   return 1.0
         case .quarterly: return 1.0 / 3.0
         case .annually:  return 1.0 / 12.0
+        }
+    }
+
+    var dayInterval: Int {
+        switch self {
+        case .daily:     return 1
+        case .weekly:    return 7
+        case .biweekly:  return 14
+        case .monthly:   return 30
+        case .quarterly: return 90
+        case .annually:  return 365
+        }
+    }
+
+    var calendarComponent: Calendar.Component {
+        switch self {
+        case .daily:     return .day
+        case .weekly, .biweekly: return .day
+        case .monthly:   return .month
+        case .quarterly: return .month
+        case .annually:  return .year
+        }
+    }
+
+    var calendarValue: Int {
+        switch self {
+        case .daily:     return 1
+        case .weekly:    return 7
+        case .biweekly:  return 14
+        case .monthly:   return 1
+        case .quarterly: return 3
+        case .annually:  return 1
+        }
+    }
+
+    /// Sensible cap on how many future occurrences to pre-generate.
+    var generationCap: Int {
+        switch self {
+        case .daily:     return 30
+        case .weekly:    return 13
+        case .biweekly:  return 12
+        case .monthly:   return 12
+        case .quarterly: return 4
+        case .annually:  return 3
         }
     }
 }
@@ -94,11 +140,13 @@ enum CategoryColor: String, Codable {
 
 @Model
 final class IncomeProfile {
-    var amount: Double
-    var frequency: IncomeFrequency
-    var lastUpdated: Date
+    var name: String = "Income"
+    var amount: Double = 0
+    var frequency: IncomeFrequency = IncomeFrequency.monthly
+    var lastUpdated: Date = Date()
 
-    init(amount: Double, frequency: IncomeFrequency) {
+    init(name: String = "Income", amount: Double, frequency: IncomeFrequency) {
+        self.name = name
         self.amount = amount
         self.frequency = frequency
         self.lastUpdated = Date()
@@ -226,48 +274,6 @@ final class LoanPayment {
     }
 }
 
-@Model
-final class Expense {
-    var name: String
-    var category: ExpenseCategory
-    var amount: Double
-    var dueDate: Date
-    var isRecurring: Bool
-    var recurringStartDate: Date?
-    var recurringEndDate: Date?
-    var recurringFrequency: PaymentFrequency?
-    var isPaid: Bool
-    var notes: String
-    var createdDate: Date
-
-    init(name: String, category: ExpenseCategory, amount: Double, dueDate: Date,
-         isRecurring: Bool = false, recurringStartDate: Date? = nil,
-         recurringEndDate: Date? = nil, recurringFrequency: PaymentFrequency? = nil,
-         notes: String = "") {
-        self.name = name
-        self.category = category
-        self.amount = amount
-        self.dueDate = dueDate
-        self.isRecurring = isRecurring
-        self.recurringStartDate = recurringStartDate
-        self.recurringEndDate = recurringEndDate
-        self.recurringFrequency = recurringFrequency
-        self.isPaid = false
-        self.notes = notes
-        self.createdDate = Date()
-    }
-
-    var isOverdue: Bool {
-        !isPaid && dueDate < Calendar.current.startOfDay(for: Date())
-    }
-
-    var isDueSoon: Bool {
-        guard !isPaid else { return false }
-        let sevenDays = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-        return dueDate >= Calendar.current.startOfDay(for: Date()) && dueDate <= sevenDays
-    }
-}
-
 // MARK: - Formatting Helpers
 
 extension Double {
@@ -280,5 +286,65 @@ extension Double {
 
     var percentFormatted: String {
         String(format: "%.1f%%", self)
+    }
+}
+
+// MARK: - Transaction
+
+enum TransactionType: String, Codable, CaseIterable {
+    case income  = "Income"
+    case expense = "Expense"
+}
+
+@Model
+final class Transaction {
+    var name: String = ""
+    var amount: Double = 0
+    var type: TransactionType = TransactionType.expense
+    var category: ExpenseCategory = ExpenseCategory.other
+    var date: Date = Date()
+    var notes: String = ""
+    var isRecurring: Bool = false
+    var recurringFrequency: PaymentFrequency = PaymentFrequency.monthly
+    /// When set, this transaction is a scheduled bill that hasn't happened yet.
+    var dueDate: Date? = nil
+    /// false for scheduled bills; true for already-happened activity.
+    var isPaid: Bool = true
+
+    init(name: String = "",
+         amount: Double,
+         type: TransactionType,
+         category: ExpenseCategory = .other,
+         date: Date = Date(),
+         notes: String = "",
+         isRecurring: Bool = false,
+         recurringFrequency: PaymentFrequency = .monthly,
+         dueDate: Date? = nil,
+         isPaid: Bool = true) {
+        self.name = name
+        self.amount = amount
+        self.type = type
+        self.category = category
+        self.date = date
+        self.notes = notes
+        self.isRecurring = isRecurring
+        self.recurringFrequency = recurringFrequency
+        self.dueDate = dueDate
+        self.isPaid = isPaid
+    }
+
+    /// True if this is an unpaid scheduled bill whose due date is in the past.
+    var isOverdue: Bool {
+        guard !isPaid, let due = dueDate else { return false }
+        return due < Calendar.current.startOfDay(for: Date())
+    }
+
+    /// True if this is an unpaid scheduled bill due within the next 7 days.
+    var isDueSoon: Bool {
+        guard !isPaid, let due = dueDate else { return false }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let in7 = cal.date(byAdding: .day, value: 7, to: today) ?? today
+        return due >= today && due <= in7
     }
 }

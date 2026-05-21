@@ -38,31 +38,47 @@ extension LinearGradient {
 // MARK: - View Modifiers
 
 struct PremiumBackground: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
     func body(content: Content) -> some View {
-        ZStack {
-            LinearGradient.appBackground.ignoresSafeArea()
-            // Ambient teal glow top-right
-            Circle()
-                .fill(RadialGradient(
-                    colors: [Color.appTeal.opacity(0.14), .clear],
-                    center: .center, startRadius: 0, endRadius: 280
-                ))
-                .frame(width: 500, height: 500)
-                .offset(x: 120, y: -200)
-                .blur(radius: 50)
-                .allowsHitTesting(false)
-            // Ambient green glow bottom-left
-            Circle()
-                .fill(RadialGradient(
-                    colors: [Color.appGreen.opacity(0.08), .clear],
-                    center: .center, startRadius: 0, endRadius: 200
-                ))
-                .frame(width: 400, height: 400)
-                .offset(x: -140, y: 300)
-                .blur(radius: 50)
-                .allowsHitTesting(false)
-            content
-        }
+        content
+            .background {
+                ZStack {
+                    if colorScheme == .dark {
+                        LinearGradient.appBackground
+                        Circle()
+                            .fill(RadialGradient(
+                                colors: [Color.appTeal.opacity(0.14), .clear],
+                                center: .center, startRadius: 0, endRadius: 280
+                            ))
+                            .frame(width: 500, height: 500)
+                            .offset(x: 120, y: -200)
+                            .blur(radius: 50)
+                            .allowsHitTesting(false)
+                        Circle()
+                            .fill(RadialGradient(
+                                colors: [Color.appGreen.opacity(0.08), .clear],
+                                center: .center, startRadius: 0, endRadius: 200
+                            ))
+                            .frame(width: 400, height: 400)
+                            .offset(x: -140, y: 300)
+                            .blur(radius: 50)
+                            .allowsHitTesting(false)
+                    } else {
+                        Color(UIColor.systemGroupedBackground)
+                        Circle()
+                            .fill(RadialGradient(
+                                colors: [Color.appTeal.opacity(0.07), .clear],
+                                center: .center, startRadius: 0, endRadius: 280
+                            ))
+                            .frame(width: 500, height: 500)
+                            .offset(x: 120, y: -200)
+                            .blur(radius: 60)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .ignoresSafeArea()
+            }
     }
 }
 
@@ -74,25 +90,13 @@ struct GlassCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        if tintOpacity > 0 {
-                            RoundedRectangle(cornerRadius: cornerRadius)
-                                .fill(LinearGradient.accentDiagonal.opacity(tintOpacity))
-                        }
-                    }
-            }
+            .glassEffect(in: .rect(cornerRadius: cornerRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [.white.opacity(0.18), .white.opacity(0.04)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                if tintOpacity > 0 {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(LinearGradient.accentDiagonal.opacity(tintOpacity))
+                        .allowsHitTesting(false)
+                }
             }
     }
 }
@@ -109,9 +113,7 @@ extension View {
     }
 
     func premiumNavBar() -> some View {
-        self
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+        self.toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }
 
@@ -157,7 +159,7 @@ struct AccentProgressBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.white.opacity(trackOpacity))
+                    .fill(Color.primary.opacity(trackOpacity * 0.6))
                     .frame(height: height)
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(gradient)
